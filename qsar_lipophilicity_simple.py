@@ -2,12 +2,13 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import Descriptors, AllChem
-from rdkit.Chem import MACCSkeys    # for generating the fingerprint
+from rdkit.Chem import MACCSkeys                                 # for generating the fingerprint
+from rdkit import Chem, DataStructs                              # We need this for the finger prent conversations
 
-from sklearn.model_selection import train_test_split    # for spliting them in the two group of training and testing
-from sklearn.ensemble import RandomForestRegressor      # Importing the ML algorithem based on the ensemble of decision trees
+from sklearn.model_selection import train_test_split             # for spliting them in the two group of training and testing
+from sklearn.ensemble import RandomForestRegressor               # Importing the ML algorithem based on the ensemble of decision trees
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-import xgboost as xgb   # It's used for the gradient boosting; builds many decisions trees, each correcting erros of the previous ones.
+import xgboost as xgb                                            # It's used for the gradient boosting; builds many decisions trees, each correcting erros of the previous ones.
 
 import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)       # Just becuase scikit-learn sometimes makes noisy warning
@@ -21,7 +22,8 @@ def load_lipophilicity_data():
     print("=" * 75)
 
     try:
-        from tdc.single_pred import ADME    #it's library that provides clean, ready-to-use datasets. So I don't have to clean datas too.
+        from tdc.single_pred import ADME
+        #it's library that provides clean, ready-to-use datasets. So I don't have to clean datas too.
         # ADME: Absorption, Distribution, Metabolism, Excretion properties
         """example of tdc:
         from tdc.single_pred import ADME
@@ -67,11 +69,12 @@ def generate_ecfp4_fingerprints(smiles_list):
         mol = smiles_to_mol(smiles)
         if mol is not None:
             # Generate Morgan fingerprint (ECFP) with radius 2 (=ECFP4)
-            fp = AllChem.GetMorganFinferprintAsBitVect(mol, radius=2, nBits=2048)   # radius is 2 since, 2x2=4 as we had for the ECFP4 and our fingerprint is 2048-bit vector (a long list of 0s and 1s)
+            fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)   # radius is 2 since, 2x2=4 as we had for the ECFP4 and our fingerprint is 2048-bit vector (a long list of 0s and 1s)
 
             # Convert to numpy array
-            arr = np.zeros((1,))
-            fingerprints.append(np.array(fp))
+            arr = np.zeros((2048,))             # Size
+            DataStructs.ConvertToNumpyArray(fp, arr)
+            fingerprints.append(arr)
         else:
             # If molecule is invalid, use zeros
             fingerprints.append(np.zeros(2048))
@@ -92,9 +95,11 @@ def generate_maccs_keys(smiles_list):
         if mol is not None:
             # Generate MACCS keys (167 bits, but first is always 0)
             maccs = MACCSkeys.GenMACCSKeys(mol)
-            maccs_list.append(np.array(maccs))
+            arr = np.zeros((167,))
+            DataStructs.ConvertToNumpyArray(maccs, arr)
+            maccs_list.append(arr)
         else:
-            maccs_list.append(np.zeros(164))
+            maccs_list.append(np.zeros(167))
 
     print(f"  ✓ Generated {len(maccs_list)} MACCS fingerprints (167 bits each)")
     return np.array(maccs_list)
@@ -123,7 +128,7 @@ def generate_rdkit_descriptors(smiles_list):
                     desc_values.append(value)
                 except:
                     desc_values.append(0)
-                descriptor_data.append(desc_values)
+            descriptor_data.append(desc_values)
         else:
             descriptor_data.append([0] * len(descriptor_names))
     
@@ -226,10 +231,157 @@ def train_xgboost(X_train, y_train, X_test, y_test):    # Train an XGBoost regre
     y_train_pred = model.predict(X_train)
     y_test_pred = model.predict(X_test)
 
+    # Calculate performace metrics
+    train_r2 = r2_score(y_train, y_train_pred)
+    test_r2 = r2_score(y_test, y_test_pred)
+    train_rmse = np.sqrt(mean_squared_error(y_train, y_train_pred))
+    test_rmse = np.sqrt(mean_squared_error(y_test, y_test_pred))
+    train_mae = mean_absolute_error(y_train, y_train_pred)
+    test_mae = mean_absolute_error(y_test, y_test_pred)
+
+    print(f"\n✓ Training Complete!")
+    print(f"\nTraining Set Performance:")
+    print(f"  - R² Score: {train_r2:.4f}")
+    print(f"  - RMSE: {train_rmse:.4f}")
+    print(f"  - MAE: {train_mae:.4f}")
+    print(f"\nTest Set Performance:")
+    print(f"  - R² Score: {test_r2:.4f}")
+    print(f"  - RMSE: {test_rmse:.4f}")
+    print(f"  - MAE: {test_mae:.4f}")
+
+    return {
+        'model': model,
+        'train_r2': train_r2,
+        'test_r2': test_r2,
+        'train_rmse': train_rmse,
+        'test_rmse': test_rmse,
+        'train_mae': train_mae,
+        'test_mae': test_mae
+    }
+
+
+# Phase 4: Model Comparison
+def compare_descriptors_and_models(df):
+    # Compare different descriptor types and models.
+    # We need to test each descriptor (ECFP4, MACCS, RDKit, Combined) + model (Random Forest, XGBoost)
+    # We need to show which combination works best!
+    print("\n" + "=" * 80)
+    print("COMPARING ALL DESCRIPTOR TYPES AND MODELS")
+    print("=" * 80)
+
+    results = []
+
+    # perpearing the data
+    smiles_list = df['Drug'].tolist()
+    y = df ['Y'].values
+
+    # Dictionary of descriptor generators
+    descriptor_types = {
+        'ECFP4': generate_ecfp4_fingerprints,
+        'MACCS': generate_maccs_keys,
+        'RDKit': generate_rdkit_descriptors,
+        'Combined': generate_combined_descriptors
+    }
+
+    # Test each descriptor type
+    for desc_name, desc_func in descriptor_types.items():
+        print(f"\n{'=' * 80}")
+        print(f"Testing Descriptor Type: {desc_name}")
+        print(f"{'=' * 80}")
+
+    # Generate descriptors
+        X = desc_func(smiles_list)
+        
+    # Split data: 80% training, 20% testing
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
+
+        print(f"\nDataset split:")
+        print(f"  - Training samples: {len(X_train)}")
+        print(f"  - Test samples: {len(X_test)}")
+
+        # Train Random Forest
+        rf_results = train_random_forest(X_train, y_train, X_test, y_test)
+        results.append({
+            'Descriptor': desc_name,
+            'Model': 'Random Forest',
+            'Test R²': rf_results['test_r2'],
+            'Test RMSE': rf_results['test_rmse'],
+            'Test MAE': rf_results['test_mae']
+        })
+
+        # Train XGBoost
+        xgb_results = train_xgboost(X_train, y_train, X_test, y_test)
+        results.append({
+            'Descriptor': desc_name,
+            'Model': 'XGBoost',
+            'Test R²': xgb_results['test_r2'],
+            'Test RMSE': xgb_results['test_rmse'],
+            'Test MAE': xgb_results['test_mae']
+        })
+
+        # Create results DataFrame
+        results_df = pd.DataFrame(results)
+        
+        return results_df
+
+# ==============
+# Final Phase: MAIN EXECUTION
+# ==============
+
+def main(): 
+# Main function that runs the entire QSAR pipeline.
     
+    print("\n" + "=" * 80)
+    print("QSAR LIPOPHILICITY PREDICTION PIPELINE")
+    print("=" * 80)
+    print("\nThis program will:")
+    print("1. Load lipophilicity dataset from TDC")
+    print("2. Generate molecular descriptors (ECFP4, MACCS, RDKit, Combined)")
+    print("3. Train machine learning models (Random Forest, XGBoost)")
+    print("4. Compare all combinations and show results")
+    print("\n")
+    
+    # Load data
+    df = load_lipophilicity_data()
+    
+    # Compare all descriptors and models
+    results_df = compare_descriptors_and_models(df)
+    
+    # Display final results
+    print("\n" + "=" * 80)
+    print("FINAL RESULTS - ALL COMBINATIONS")
+    print("=" * 80)
+    print("\n", results_df.to_string(index=False))
+    
+    # Find best model
+    best_idx = results_df['Test R²'].idxmax()
+    best_result = results_df.iloc[best_idx]
+    
+    print("\n" + "=" * 80)
+    print("BEST PERFORMING MODEL")
+    print("=" * 80)
+    print(f"\nDescriptor Type: {best_result['Descriptor']}")
+    print(f"Model: {best_result['Model']}")
+    print(f"Test R² Score: {best_result['Test R²']:.4f}")
+    print(f"Test RMSE: {best_result['Test RMSE']:.4f}")
+    print(f"Test MAE: {best_result['Test MAE']:.4f}")
+    
+    print("\n" + "=" * 80)
+    print("ANALYSIS COMPLETE!")
+    print("=" * 80)
+    
+    # Save results
+    results_df.to_csv('qsar_results.csv', index=False)
+    print("\n✓ Results saved to 'qsar_results.csv'")
+    
+    return results_df
 
 
-
+if __name__ == "__main__":
+   
+    results = main()
 
 
 
