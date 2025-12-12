@@ -22,7 +22,7 @@ def load_lipophilicity_data():
     print("=" * 75)
 
     try:
-        from tdc.single_pred import ADME
+        from tdc.single_pred import ADME            # The error is for the library; it's okay.
         #it's library that provides clean, ready-to-use datasets. So I don't have to clean datas too.
         # ADME: Absorption, Distribution, Metabolism, Excretion properties
         """example of tdc:
@@ -332,7 +332,24 @@ def compare_descriptors_and_models(df):
 
 def main(): 
 # Main function that runs the entire QSAR pipeline.
+    banner = r"""
+   ___  ____    _    ____    __  __    _    ____ _____ _____ ____  
+  / _ \/ ___|  / \  |  _ \  |  \/  |  / \  / ___|_   _| ____|  _ \ 
+ | | | \___ \ / _ \ | |_) | | |\/| | / _ \ \___ \ | | |  _| | |_) |
+ | |_| |___) / ___ \|  _ <  | |  | |/ ___ \ ___) || | | |___|  _ < 
+  \__\_\____/_/   \_\_| \_\ |_|  |_/_/   \_\____/ |_| |_____|_| \_\
     
+    >>> Developed by: Sina 
+    >>> Version: 1.0 (2025)
+    """
+    
+    print("\n" + "=" * 80)
+    print(banner)                   # (if you like the banner search for "ASCII Art Generator")
+    print("=" * 80)    
+
+
+
+
     print("\n" + "=" * 80)
     print("QSAR LIPOPHILICITY PREDICTION PIPELINE")
     print("=" * 80)
