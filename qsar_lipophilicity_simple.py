@@ -94,12 +94,14 @@ def generate_maccs_keys(smiles_list):
         mol = smiles_to_mol(smiles)
         if mol is not None:
             # Generate MACCS keys (167 bits, but first is always 0)
+            # The point is that 0 is unused; so, 0 unused + 166 bits
             maccs = MACCSkeys.GenMACCSKeys(mol)
             arr = np.zeros((167,))
             DataStructs.ConvertToNumpyArray(maccs, arr)
             maccs_list.append(arr)
         else:
             maccs_list.append(np.zeros(167))
+            # Using the invalid fp for the cases that the mol is None or SMILES is invalid.
 
     print(f"  ✓ Generated {len(maccs_list)} MACCS fingerprints (167 bits each)")
     return np.array(maccs_list)
@@ -120,10 +122,10 @@ def generate_rdkit_descriptors(smiles_list):
     for smiles in smiles_list:
         mol = smiles_to_mol(smiles)
         if mol is not None:
-            desc_values = []
+            desc_values = []                                             # Descriptor values for one molecule.
             for desc_name in descriptor_names:
                 try:    #getting the descriptor function form RDkit
-                    desc_func = getattr(Descriptors, desc_name)
+                    desc_func = getattr(Descriptors, desc_name)         # Instead of Looping them all one by one we'll use "getattr"
                     value = desc_func(mol)
                     desc_values.append(value)
                 except:
@@ -166,13 +168,19 @@ def train_random_forest(X_train, y_train, X_test, y_test):  # Training Random Fo
         max_depth=20,           # Maximum depth of each tree
         min_samples_split=5,    # Minimum samples to split a node
         random_state=42,        # for reproducibility
-        n_jobs=-1,              # Use all CPU cores
+        n_jobs=-1,              # Use all CPU cores, 1= single core
     )
 
     # Train the model
     print("(RandomForest)Training...")
-    model.fit(X_train, y_train)
-
+    model.fit(X_train, y_train) 
+    # Train = model LEARNS the patterns of the 80% of data
+    # X_train will be the numerical features. (In this case it would be the 80% of dataset.)
+    # y_train will be the result of the Descriptors. (In this case would be the lipophilicites of 80% of daataset.)
+    
+    # Test = If the model can predict values for the new molecules.
+    # X_test will be the remaining 20% of the dataset.
+    # y_test will be lipophilicity of those 20% data.
     # Make predictions
     y_train_pred = model.predict(X_train)
     y_test_pred = model.predict(X_test)
@@ -273,7 +281,7 @@ def compare_descriptors_and_models(df):
 
     # perpearing the data
     smiles_list = df['Drug'].tolist()
-    y = df ['Y'].values
+    y = df ['Y'].values             # Column Y is related to the lipophilicity
 
     # Dictionary of descriptor generators
     descriptor_types = {
@@ -292,7 +300,7 @@ def compare_descriptors_and_models(df):
     # Generate descriptors
         X = desc_func(smiles_list)
         
-    # Split data: 80% training, 20% testing
+    # Split data: 80% training, 20% testing(test_size=0.2)
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42
         )
@@ -322,9 +330,9 @@ def compare_descriptors_and_models(df):
         })
 
         # Create results DataFrame
-        results_df = pd.DataFrame(results)
-        
-        return results_df
+    results_df = pd.DataFrame(results)
+    
+    return results_df
 
 # ==============
 # Final Phase: MAIN EXECUTION
