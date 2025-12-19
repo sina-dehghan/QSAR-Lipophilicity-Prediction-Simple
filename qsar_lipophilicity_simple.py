@@ -1,9 +1,9 @@
 import numpy as np
 import pandas as pd
-from rdkit import Chem
-from rdkit.Chem import Descriptors, AllChem
-from rdkit.Chem import MACCSkeys                                 # for generating the fingerprint
 from rdkit import Chem, DataStructs                              # We need this for the finger prent conversations
+from rdkit.Chem import Descriptors, AllChem, MACCSkeys           # for generating the fingerprint
+                             
+import joblib                                                    # for saving best model (Chat-GPT)
 
 from sklearn.model_selection import train_test_split             # for spliting them in the two group of training and testing
 from sklearn.ensemble import RandomForestRegressor               # Importing the ML algorithem based on the ensemble of decision trees
@@ -11,7 +11,7 @@ from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 import xgboost as xgb                                            # It's used for the gradient boosting; builds many decisions trees, each correcting erros of the previous ones.
 
 import warnings
-warnings.filterwarnings('ignore', category=FutureWarning)       # Just becuase scikit-learn sometimes makes noisy warning
+warnings.filterwarnings('ignore', category=FutureWarning)        # Just becuase scikit-learn sometimes makes noisy warning
 
 
 #   Phase 1: Loading data
@@ -48,6 +48,43 @@ def load_lipophilicity_data():
         print("TDC not installed. Install with: pip install PyTDC")
         raise
 
+# New: Validating dataset and checking the right columns that we need. (from Chat-GPT; must Check.)
+def validate_dataset(df):
+    
+    print("\nValidating dataset...")
+    
+    # Check required columns
+    required_cols = ['Drug', 'Y']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
+    
+    # Check for empty dataset
+    if len(df) == 0:
+        raise ValueError("Dataset is empty!")
+    
+    # Check for minimum samples
+    if len(df) < 100:
+        print(f"WARNING: Only {len(df)} samples. Need at least 100 for reliable results.")
+    
+    # Check for missing values
+    null_counts = df.isnull().sum()
+    if null_counts.any():
+        print(f"WARNING: Found missing values:\n{null_counts[null_counts > 0]}")
+    
+    # Check for invalid SMILES
+    invalid_count = 0
+    for smiles in df['Drug'][:10]:  # Check first 10
+        if smiles_to_mol(smiles) is None:
+            invalid_count += 1
+    
+    if invalid_count > 0:
+        print(f"WARNING: Found {invalid_count}/10 invalid SMILES in sample")
+    
+    print("✓ Dataset validation complete")
+    return True
+# New
+
 # Phase 2: Molecular Descriptor Generation
 
 def smiles_to_mol(smiles):
@@ -55,8 +92,11 @@ def smiles_to_mol(smiles):
 
     try:
         mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            print(f"Warning: Invalid SMILES string: {smiles}")
         return mol
-    except:
+    except Exception as e:
+        print(f"Error processing SMILES '{smiles}': {str(e)}")
         return None
 
 
@@ -112,10 +152,10 @@ def generate_rdkit_descriptors(smiles_list):
 
     # creating a subset of usful descriptors
     descriptor_names = [
-        'MolWt', 'MolLogP', 'NumHDonors', 'NumHAcceptors',
+        'MolWt', 'NumHDonors', 'NumHAcceptors',                     # Removing MolLogP ,which is RDKit's prediction of LogP, to check the model.
         'TPSA', 'NumRotatableBonds', 'NumAromaticRings',
         'NumAliphaticRings', 'FractionCSP3', 'HeavyAtomCount',
-        'NumHeteroatoms', 'RingCount', 'MolMR'
+        'NumHeteroatoms', 'RingCount', 'MolMR', 'NumSaturatedRings' # adding 'NumSaturatedRings'
     ]
     descriptor_data = []
 
@@ -165,8 +205,10 @@ def train_random_forest(X_train, y_train, X_test, y_test):  # Training Random Fo
     # Creating the model with 100 trees
     model = RandomForestRegressor(
         n_estimators=100,       # Number of trees
-        max_depth=20,           # Maximum depth of each tree
-        min_samples_split=5,    # Minimum samples to split a node
+        max_depth=20,           # Maximum depth of each tree (Reduced from 20)
+        min_samples_split=10,    # Minimum samples to split a node (Increased from 5)
+        min_samples_leaf=4,     # ← NEW: Minimum samples in leaves
+        max_features='sqrt',    # ← NEW: Use sqrt of features per tree
         random_state=42,        # for reproducibility
         n_jobs=-1,              # Use all CPU cores, 1= single core
     )
@@ -223,11 +265,15 @@ def train_xgboost(X_train, y_train, X_test, y_test):    # Train an XGBoost regre
 
     # Create model
     model = xgb.XGBRegressor(
-        n_estimators=100,       # Number of boosting rounds
-        max_depth=6,            # Maximum depth of tree
-        learning_rate=0.1,      # Step size for each tree
-        subsample=0.8,          # Fraction of samples for each tree
-        colsample_bytree=0.8,    # Fractino of features for each tree
+        n_estimators=100,           # Number of boosting rounds
+        max_depth=4,                # Maximum depth of tree.    (Reduced from 6, which was deep and ovverfit)
+        min_child_weight=3,         # New: Prevents tiny leaves that fit noise
+        gamma=0.1,                  # New: Making model more conservative for spliting
+        reg_alpha=0.1,              # New: L1 regularization. Penalize large feature weights
+        reg_lambda=1.0,             # New: L2 regularization
+        learning_rate=0.1,          # Step size for each tree
+        subsample=0.8,              # Fraction of samples for each tree
+        colsample_bytree=0.8,       # Fractino of features for each tree
         random_state=42
     )
 
@@ -300,7 +346,7 @@ def compare_descriptors_and_models(df):
         # Generate descriptors
         X = desc_func(smiles_list)
         
-    # Split data: 80% training, 20% testing(test_size=0.2)
+        # Split data: 80% training, 20% testing(test_size=0.2)
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42
         )
@@ -370,6 +416,9 @@ def main():
     
     # Load data
     df = load_lipophilicity_data()
+
+    # NEW: Calling Validate dataset
+    validate_dataset(df)
     
     # Compare all descriptors and models
     results_df = compare_descriptors_and_models(df)
@@ -397,11 +446,68 @@ def main():
     print("ANALYSIS COMPLETE!")
     print("=" * 80)
     
+    # New (Chat-GPT)---------------------------------------
+    # ... all existing code until the end ...
+    
+    print("\n" + "=" * 80)
+    print("BEST PERFORMING MODEL")
+    print("=" * 80)
+    print(f"\nDescriptor Type: {best_result['Descriptor']}")
+    print(f"Model: {best_result['Model']}")
+    print(f"Test R² Score: {best_result['Test R²']:.4f}")
+    print(f"Test RMSE: {best_result['Test RMSE']:.4f}")
+    print(f"Test MAE: {best_result['Test MAE']:.4f}")
+    
+    # NEW: Retrain best model and save it
+    print("\n" + "=" * 80)
+    print("SAVING BEST MODEL")
+    print("=" * 80)
+    
+    # Regenerate best descriptors
+    smiles_list = df['Drug'].tolist()
+    y = df['Y'].values
+    
+    if best_result['Descriptor'] == 'ECFP4':
+        X = generate_ecfp4_fingerprints(smiles_list)
+    elif best_result['Descriptor'] == 'MACCS':
+        X = generate_maccs_keys(smiles_list)
+    elif best_result['Descriptor'] == 'RDKit':
+        X = generate_rdkit_descriptors(smiles_list)
+    else:  # Combined
+        X = generate_combined_descriptors(smiles_list)
+    
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+    
+    # Retrain best model
+    if best_result['Model'] == 'XGBoost':
+        final_model = train_xgboost(X_train, y_train, X_test, y_test)['model']
+    else:
+        final_model = train_random_forest(X_train, y_train, X_test, y_test)['model']
+    
+    # Save model
+    model_filename = f"best_model_{best_result['Descriptor']}_{best_result['Model'].replace(' ', '_')}.pkl"
+    joblib.dump(final_model, model_filename)
+    print(f"✓ Model saved to '{model_filename}'")
+    
+    # Save descriptor type info
+    with open('model_descriptor_type.txt', 'w') as f:
+        f.write(f"Descriptor: {best_result['Descriptor']}\n")
+        f.write(f"Model: {best_result['Model']}\n")
+        f.write(f"Test R²: {best_result['Test R²']:.4f}\n")
+    print("✓ Model metadata saved to 'model_descriptor_type.txt'")
+    
+    print("\n" + "=" * 80)
+    print("ANALYSIS COMPLETE!")
+    print("=" * 80)
+    # New (Chat-GPT)--------------------------------------------
+
     # Save results
     results_df.to_csv('qsar_results.csv', index=False)
     print("\n✓ Results saved to 'qsar_results.csv'")
     
-    return results_df
+    return results_df, final_model  #New final_model added
 
 
 if __name__ == "__main__":
