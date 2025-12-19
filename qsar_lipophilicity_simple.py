@@ -4,6 +4,7 @@ from rdkit import Chem, DataStructs                              # We need this 
 from rdkit.Chem import Descriptors, AllChem, MACCSkeys           # for generating the fingerprint
                              
 import joblib                                                    # for saving best model (Chat-GPT)
+import pickle                                                    # For saving test data
 
 from sklearn.model_selection import train_test_split             # for spliting them in the two group of training and testing
 from sklearn.ensemble import RandomForestRegressor               # Importing the ML algorithem based on the ensemble of decision trees
@@ -312,6 +313,42 @@ def train_xgboost(X_train, y_train, X_test, y_test):    # Train an XGBoost regre
         'train_mae': train_mae,
         'test_mae': test_mae
     }
+
+# New Phase 5: Saving model and datas, so we can use them for the visualization file (Chat-GPT)
+def save_model_and_data(model_results, descriptor_type, model_type, X_test, y_test, y_test_pred, save_dir='saved_models'):
+    import os
+
+    # Create directory if it doesn't exist
+    if not os.path.exists(save_dir):
+        os.mkdir(save_dir)
+        print(f"✓ Created '{save_dir}' directory")
+    
+    # Clean model name for filename (remove spaces)
+    clean_model_name = model_type.replace(' ', '_')
+    base_name = f"{descriptor_type}_{clean_model_name}"
+
+    # 1.Save the trained model
+    model_path = os.path.join(save_dir, f"{base_name}_model.pkl")
+    joblib.dump(model_results['model'], model_path)
+
+    # 2. Save test data and predictions
+    data_path = os.path.join(save_dir, f"{base_name}_test_data.pkl")
+    np.savez(data_path, 
+             X_test=X_test,
+             y_test=y_test,
+             y_test_pred=y_test_pred)
+    
+    # 3. Save metadata
+    metadata_path = os.path.join(save_dir, f"{base_name}_metadata.txt")
+    with open(metadata_path, 'w') as f:
+        f.write(f"Descriptor Type: {descriptor_type}\n")
+        f.write(f"Model Type: {model_type}\n")
+        f.write(f"Test R²: {model_results['test_r2']:.4f}\n")
+        f.write(f"Test RMSE: {model_results['test_rmse']:.4f}\n")
+        f.write(f"Test MAE: {model_results['test_mae']:.4f}\n")
+    
+    print(f"  ✓ Saved {base_name} artifacts to '{save_dir}/'")
+
 
 
 # Phase 4: Model Comparison
