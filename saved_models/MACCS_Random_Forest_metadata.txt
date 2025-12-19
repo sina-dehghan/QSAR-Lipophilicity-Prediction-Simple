@@ -1,0 +1,5 @@
+Descriptor Type: MACCS
+Model Type: Random Forest
+Test R²: 0.4417
+Test RMSE: 0.9082
+Test MAE: 0.7158

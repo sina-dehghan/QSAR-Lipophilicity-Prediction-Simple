@@ -1,0 +1,5 @@
+Descriptor Type: RDKit
+Model Type: XGBoost
+Test R²: 0.3557
+Test RMSE: 0.9756
+Test MAE: 0.7560

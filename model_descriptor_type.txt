@@ -1,0 +1,3 @@
+Descriptor: Combined
+Model: XGBoost
+Test R²: 0.6066

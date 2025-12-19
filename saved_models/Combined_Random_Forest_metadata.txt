@@ -1,0 +1,5 @@
+Descriptor Type: Combined
+Model Type: Random Forest
+Test R²: 0.4831
+Test RMSE: 0.8739
+Test MAE: 0.6829

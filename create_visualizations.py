@@ -9,6 +9,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+import joblib   # For loading saved models
+import pickle   # For loading saved data
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+
+
 from rdkit import Chem
 from rdkit.Chem import Descriptors, AllChem, MACCSkeys, DataStructs
 from sklearn.model_selection import train_test_split
@@ -185,71 +190,95 @@ def plot_predicted_vs_actual(df, descriptor_type='Combined', model_type='XGBoost
     # Create scatter plot of Predicted vs Actual lipophilicity values.
     print(f"\n📊 Creating predicted vs actual plot ({descriptor_type} + {model_type})...")
 
-    # Generate descriptors based on type
-    from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+    # NEW: Load the saved model and test data
+    try:
+        clean_model_name = model_type.replace(' ', '_')
+        base_name = f"{descriptor_type}_{clean_model_name}"
 
-    smiles_list = df['Drug'].tolist()
-    y = df['Y'].values
+        # Load model
+        model_path = f"saved_models/{base_name}_model.pkl"
+        model = joblib.load(model_path)
+        print(f"  ✓ Loaded model from {model_path}")
 
-    # Generate features based on descriptor type
-    if descriptor_type == 'ECFP4':
-        X = generate_ecfp4_fingerprints(smiles_list)
-    elif descriptor_type == 'MACCS':
-        X = generate_maccs_keys(smiles_list)
-    elif descriptor_type == 'RDKit':
-        X = generate_rdkit_descriptors(smiles_list)
-    else:  # Combined
-        X = generate_combined_descriptors(smiles_list)
+        # Load test data
+        data_path = f"saved_models/{base_name}_test_data.npz"
+        data = np.load(data_path)
+        X_test = data['X_test']
+        y_test = data['y_test']
+        y_test_pred = data['y_test_pred']
+        print(f"  ✓ Loaded test data from {data_path}")
 
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        # Also get training predictions for the plot
+        # We need to regenerate training data
+        smiles_list = df['Drug'].tolist()
+        y = df['Y'].values
 
-    # Train model
-    if model_type == 'Random Forest':
-        model = RandomForestRegressor(n_estimators=100, max_depth=20, random_state=42, n_jobs=-1)
-    else:  # XGBoost
-        model = xgb.XGBRegressor(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42)
-    
-    model.fit(X_train, y_train)
+        # Generate features based on descriptor type
+        if descriptor_type == 'ECFP4':
+            X = generate_ecfp4_fingerprints(smiles_list)
+        elif descriptor_type == 'MACCS':
+            X = generate_maccs_keys(smiles_list)
+        elif descriptor_type == 'RDKit':
+            X = generate_rdkit_descriptors(smiles_list)
+        else:  # Combined
+            X = generate_combined_descriptors(smiles_list)
 
-    
-    # Make predictions
-    y_train_pred = model.predict(X_train)
-    y_test_pred = model.predict(X_test)
-    
+        # Split data (same random_state=42 gives same split)
+        from sklearn.model_selection import train_test_split
+        X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        # Get training predictions
+        y_train_pred = model.predict(X_train)
+
+    except FileNotFoundError as e:
+        print(f"  ✗ ERROR: Could not find saved model/data!")
+        print(f"    {str(e)}")
+        print(f"  ➜ Make sure you've run the main QSAR script first!")
+        return None, None, None, None
+
     # Calculate metrics
+    train_r2 = r2_score(y_train, y_train_pred)
     test_r2 = r2_score(y_test, y_test_pred)
+    train_rmse = np.sqrt(mean_squared_error(y_train, y_train_pred))
     test_rmse = np.sqrt(mean_squared_error(y_test, y_test_pred))
+    train_mae = mean_absolute_error(y_train, y_train_pred)
     test_mae = mean_absolute_error(y_test, y_test_pred)
+
 
     # Create plot
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
     
-    # Plot 1: Training set
-    axes[0].scatter(y_train, y_train_pred, alpha=0.5, s=50, color='steelblue', edgecolor='black', linewidth=0.5)
+    # Plot 1: Training Set
+    axes[0].scatter(y_train, y_train_pred, alpha=0.5, s=30, color='steelblue', edgecolors='navy')
     axes[0].plot([y_train.min(), y_train.max()], [y_train.min(), y_train.max()], 
-                'r--', linewidth=3, label='Perfect Prediction')
+                 'r--', lw=2, label='Perfect Prediction')
     axes[0].set_xlabel('Actual LogP', fontsize=12, fontweight='bold')
     axes[0].set_ylabel('Predicted LogP', fontsize=12, fontweight='bold')
-    axes[0].set_title(f'Training Set: {descriptor_type} + {model_type}', fontsize=14, fontweight='bold')
-    axes[0].legend(fontsize=11)
+    axes[0].set_title(f'Training Set: {descriptor_type} + {model_type}', fontsize=13, fontweight='bold')
+    axes[0].legend()
     axes[0].grid(True, alpha=0.3)
-    train_r2 = r2_score(y_train, y_train_pred)
-    axes[0].text(0.05, 0.95, f'R² = {train_r2:.4f}', transform=axes[0].transAxes,
-                fontsize=12, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
-    # Plot 2: Test set
-    axes[1].scatter(y_test, y_test_pred, alpha=0.6, s=50, color='coral', edgecolor='black', linewidth=0.5)
+    # Add metrics text box
+    textstr = f'R² = {train_r2:.4f}\nRMSE = {train_rmse:.4f}\nMAE = {train_mae:.4f}'
+    props = dict(boxstyle='round', facecolor='lightgreen', alpha=0.8)
+    axes[0].text(0.05, 0.95, textstr, transform=axes[0].transAxes, fontsize=11,
+                verticalalignment='top', bbox=props)
+
+    # Plot 2: Test Set
+    axes[1].scatter(y_test, y_test_pred, alpha=0.6, s=30, color='coral', edgecolors='darkred')
     axes[1].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 
-                'r--', linewidth=3, label='Perfect Prediction')
+                 'r--', lw=2, label='Perfect Prediction')
     axes[1].set_xlabel('Actual LogP', fontsize=12, fontweight='bold')
     axes[1].set_ylabel('Predicted LogP', fontsize=12, fontweight='bold')
-    axes[1].set_title(f'Test Set: {descriptor_type} + {model_type}', fontsize=14, fontweight='bold')
-    axes[1].legend(fontsize=11)
+    axes[1].set_title(f'Test Set: {descriptor_type} + {model_type}', fontsize=13, fontweight='bold')
+    axes[1].legend()
     axes[1].grid(True, alpha=0.3)
-    axes[1].text(0.05, 0.95, f'R² = {test_r2:.4f}\nRMSE = {test_rmse:.4f}\nMAE = {test_mae:.4f}', 
-                transform=axes[1].transAxes, fontsize=11, verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.8))
+
+    # Add metrics text box
+    textstr = f'R² = {test_r2:.4f}\nRMSE = {test_rmse:.4f}\nMAE = {test_mae:.4f}'
+    props = dict(boxstyle='round', facecolor='lightcoral', alpha=0.8)
+    axes[1].text(0.05, 0.95, textstr, transform=axes[1].transAxes, fontsize=11,
+                verticalalignment='top', bbox=props)
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -302,31 +331,29 @@ def plot_feature_importance_rdkit(df, model_type='Random Forest', top_n=15,
     
     print(f"\n📊 Creating feature importance plot (RDKit descriptors with {model_type})...")
 
-    # Generate RDkit descriptors
-    smiles_list =df['Drug'].tolist()
-    y = df['Y'].values
-    X = generate_rdkit_descriptors(smiles_list)             # Check it later.
+    # NEW: Load the saved RDKit model
+    try:
+        clean_model_name = model_type.replace(' ', '_')
+        base_name = f"RDKit_{clean_model_name}"
+        model_path = f"saved_models/{base_name}_model.pkl"
+        model = joblib.load(model_path)
+        print(f"  ✓ Loaded model from {model_path}")
+    except FileNotFoundError:
+        print(f"  ✗ ERROR: Could not find {model_path}!")
+        print(f"  ➜ Make sure you've run the main QSAR script first!")
+        return
 
+    # Descriptor names (must match what's in the main script)
     descriptor_names = [
         'MolWt', 'MolLogP', 'NumHDonors', 'NumHAcceptors',
         'TPSA', 'NumRotatableBonds', 'NumAromaticRings',
         'NumAliphaticRings', 'FractionCSP3', 'HeavyAtomCount',
         'NumHeteroatoms', 'RingCount', 'MolMR'
     ]
-
-    # Split and train
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
-    if model_type == 'Random Forest':
-        model = RandomForestRegressor(n_estimators=100, max_depth=20, random_state=42, n_jobs=-1)
-    else:  # XGBoost
-        model = xgb.XGBRegressor(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42)
-    
-    model.fit(X_train, y_train)
-
-    # Get feature importance
+    # Get feature importance from loaded model
     importances = model.feature_importances_
-    
+
     # Create DataFrame and sort
     importance_df = pd.DataFrame({
         'Feature': descriptor_names,
@@ -351,6 +378,48 @@ def plot_feature_importance_rdkit(df, model_type='Random Forest', top_n=15,
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"  ✓ Saved to: {save_path}")
     plt.close()
+
+# New Chat GPT
+def plot_best_model_results(df):
+    """
+    Automatically load and plot results from the best performing model.
+    """
+    try:
+        # Load best model info
+        with open('best_model_info.pkl', 'rb') as f:
+            best_info = pickle.load(f)
+        
+        descriptor = best_info['descriptor']
+        model = best_info['model']
+        
+        print(f"\n🏆 Plotting best model: {descriptor} + {model}")
+        print(f"   Test R² = {best_info['test_r2']:.4f}")
+        
+        # Create plots for best model
+        model_obj, X_test, y_test, y_test_pred = plot_predicted_vs_actual(
+            df, descriptor_type=descriptor, model_type=model
+        )
+        
+        if model_obj is not None:
+            plot_residuals(y_test, y_test_pred, 
+                          descriptor_type=descriptor, model_type=model)
+        
+        return best_info
+        
+    except FileNotFoundError:
+        print("  ✗ ERROR: best_model_info.pkl not found!")
+        print("  ➜ Using default: Combined + XGBoost")
+        
+        model_obj, X_test, y_test, y_test_pred = plot_predicted_vs_actual(
+            df, descriptor_type='Combined', model_type='XGBoost'
+        )
+        
+        if model_obj is not None:
+            plot_residuals(y_test, y_test_pred, 
+                          descriptor_type='Combined', model_type='XGBoost')
+        
+        return None
+# New Chat GPT
 
 # =================================
 # WHAT WE NEED FROM THE MAIN SCRIPT:

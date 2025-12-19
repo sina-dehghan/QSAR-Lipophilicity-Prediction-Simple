@@ -332,7 +332,7 @@ def save_model_and_data(model_results, descriptor_type, model_type, X_test, y_te
     joblib.dump(model_results['model'], model_path)
 
     # 2. Save test data and predictions
-    data_path = os.path.join(save_dir, f"{base_name}_test_data.pkl")
+    data_path = os.path.join(save_dir, f"{base_name}_test_data.npz")
     np.savez(data_path, 
              X_test=X_test,
              y_test=y_test,
@@ -394,6 +394,12 @@ def compare_descriptors_and_models(df):
 
         # Train Random Forest
         rf_results = train_random_forest(X_train, y_train, X_test, y_test)
+
+        # New: Get predictions and save everything
+        y_test_pred_rf = rf_results['model'].predict(X_test)
+        save_model_and_data(rf_results, desc_name, 'Random Forest', 
+                           X_test, y_test, y_test_pred_rf)
+
         results.append({
             'Descriptor': desc_name,
             'Model': 'Random Forest',
@@ -404,6 +410,12 @@ def compare_descriptors_and_models(df):
 
         # Train XGBoost
         xgb_results = train_xgboost(X_train, y_train, X_test, y_test)
+
+        # NEW: Get predictions and save everything
+        y_test_pred_xgb = xgb_results['model'].predict(X_test)
+        save_model_and_data(xgb_results, desc_name, 'XGBoost', 
+                           X_test, y_test, y_test_pred_xgb)
+
         results.append({
             'Descriptor': desc_name,
             'Model': 'XGBoost',
@@ -544,6 +556,20 @@ def main():
     results_df.to_csv('qsar_results.csv', index=False)
     print("\n✓ Results saved to 'qsar_results.csv'")
     
+    # NEW: Save best model info for easy access
+    best_model_info = {
+        'descriptor': best_result['Descriptor'],
+        'model': best_result['Model'],
+        'test_r2': best_result['Test R²'],
+        'test_rmse': best_result['Test RMSE'],
+        'test_mae': best_result['Test MAE']
+    }
+    
+    with open('best_model_info.pkl', 'wb') as f:
+        pickle.dump(best_model_info, f)
+    print("✓ Best model info saved to 'best_model_info.pkl'")
+
+
     return results_df, final_model  #New final_model added
 
 

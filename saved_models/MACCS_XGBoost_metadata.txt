@@ -1,0 +1,5 @@
+Descriptor Type: MACCS
+Model Type: XGBoost
+Test R²: 0.5235
+Test RMSE: 0.8391
+Test MAE: 0.6695
