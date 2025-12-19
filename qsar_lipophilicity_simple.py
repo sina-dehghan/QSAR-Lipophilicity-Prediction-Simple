@@ -297,7 +297,7 @@ def compare_descriptors_and_models(df):
         print(f"Testing Descriptor Type: {desc_name}")
         print(f"{'=' * 80}")
 
-    # Generate descriptors
+        # Generate descriptors
         X = desc_func(smiles_list)
         
     # Split data: 80% training, 20% testing(test_size=0.2)
