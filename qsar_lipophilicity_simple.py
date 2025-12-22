@@ -5,8 +5,9 @@ from rdkit.Chem import Descriptors, AllChem, MACCSkeys           # for generatin
                              
 import joblib                                                    # for saving best model (Chat-GPT)
 import pickle                                                    # For saving test data
-
+                                                                 # check: test shap
 from sklearn.model_selection import train_test_split             # for spliting them in the two group of training and testing
+from sklearn.model_selection import GridSearchCV                 # New for testing combinations of Xgboost
 from sklearn.ensemble import RandomForestRegressor               # Importing the ML algorithem based on the ensemble of decision trees
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 import xgboost as xgb                                            # It's used for the gradient boosting; builds many decisions trees, each correcting erros of the previous ones.
@@ -68,7 +69,7 @@ def validate_dataset(df):
     if len(df) < 100:
         print(f"WARNING: Only {len(df)} samples. Need at least 100 for reliable results.")
     
-    # Check for missing values
+    # Check for missing values                          #check
     null_counts = df.isnull().sum()
     if null_counts.any():
         print(f"WARNING: Found missing values:\n{null_counts[null_counts > 0]}")
@@ -153,10 +154,10 @@ def generate_rdkit_descriptors(smiles_list):
 
     # creating a subset of usful descriptors
     descriptor_names = [
-        'MolWt', 'NumHDonors', 'NumHAcceptors',                     # Removing MolLogP ,which is RDKit's prediction of LogP, to check the model.
+        'MolWt', 'NumHDonors', 'NumHAcceptors',            # Removing MolLogP ,which is RDKit's prediction of LogP, to check the model.
         'TPSA', 'NumRotatableBonds', 'NumAromaticRings',
-        'NumAliphaticRings', 'FractionCSP3', 'HeavyAtomCount',
-        'NumHeteroatoms', 'RingCount', 'MolMR', 'NumSaturatedRings' # adding 'NumSaturatedRings'
+        'NumAliphaticRings', 'FractionCSP3',               # Let's remove "HeavyAtomCount" and "MolMR", which are duplicates of MolWt
+        'NumHeteroatoms', 'RingCount', 'NumSaturatedRings' # adding 'NumSaturatedRings'
     ]
     descriptor_data = []
 
@@ -225,7 +226,7 @@ def train_random_forest(X_train, y_train, X_test, y_test):  # Training Random Fo
     # X_test will be the remaining 20% of the dataset.
     # y_test will be lipophilicity of those 20% data.
     # Make predictions
-    y_train_pred = model.predict(X_train)
+    y_train_pred = model.predict(X_train)      # It's for checking the overfitting and underfiting of the model(from training datas) that it was trained with it.
     y_test_pred = model.predict(X_test)
 
     # Calculate performance metrics
@@ -266,13 +267,13 @@ def train_xgboost(X_train, y_train, X_test, y_test):    # Train an XGBoost regre
 
     # Create model
     model = xgb.XGBRegressor(
-        n_estimators=100,           # Number of boosting rounds
-        max_depth=4,                # Maximum depth of tree.    (Reduced from 6, which was deep and ovverfit)
+        n_estimators=[150, 200, 250],           # Number of boosting rounds
+        max_depth=[4, 5, 6],                # Maximum depth of tree.    (Reduced from 6, which was deep and ovverfit)
         min_child_weight=3,         # New: Prevents tiny leaves that fit noise
         gamma=0.1,                  # New: Making model more conservative for spliting
         reg_alpha=0.1,              # New: L1 regularization. Penalize large feature weights
         reg_lambda=1.0,             # New: L2 regularization
-        learning_rate=0.1,          # Step size for each tree
+        learning_rate=[0.05, 0.1, 0.15],          # Step size for each tree
         subsample=0.8,              # Fraction of samples for each tree
         colsample_bytree=0.8,       # Fractino of features for each tree
         random_state=42

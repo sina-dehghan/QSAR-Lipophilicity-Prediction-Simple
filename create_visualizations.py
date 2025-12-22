@@ -72,9 +72,10 @@ def plot_molecular_property_correlations(df, save_path='plots/property_correlati
     sample_df = df.sample(n=sample_size, random_state=42)
 
     descriptor_names = [
-        'MolWt', 'MolLogP', 'NumHDonors', 'NumHAcceptors',
+        'MolWt', 'NumHDonors', 'NumHAcceptors',                     # Removing MolLogP ,which is RDKit's prediction of LogP, to check the model.
         'TPSA', 'NumRotatableBonds', 'NumAromaticRings',
-        'NumAliphaticRings', 'FractionCSP3', 'HeavyAtomCount'
+        'NumAliphaticRings', 'FractionCSP3', 'HeavyAtomCount',
+        'NumHeteroatoms', 'RingCount', 'MolMR', 'NumSaturatedRings' # adding 'NumSaturatedRings'
     ]
 
     desc_data = []
@@ -345,10 +346,10 @@ def plot_feature_importance_rdkit(df, model_type='Random Forest', top_n=15,
 
     # Descriptor names (must match what's in the main script)
     descriptor_names = [
-        'MolWt', 'MolLogP', 'NumHDonors', 'NumHAcceptors',
+        'MolWt', 'NumHDonors', 'NumHAcceptors',                     # Removing MolLogP ,which is RDKit's prediction of LogP, to check the model.
         'TPSA', 'NumRotatableBonds', 'NumAromaticRings',
         'NumAliphaticRings', 'FractionCSP3', 'HeavyAtomCount',
-        'NumHeteroatoms', 'RingCount', 'MolMR'
+        'NumHeteroatoms', 'RingCount', 'MolMR', 'NumSaturatedRings' # adding 'NumSaturatedRings'
     ]
     
     # Get feature importance from loaded model
@@ -461,10 +462,10 @@ def generate_maccs_keys(smiles_list):
 
 def generate_rdkit_descriptors(smiles_list):
     descriptor_names = [
-        'MolWt', 'MolLogP', 'NumHDonors', 'NumHAcceptors',
+        'MolWt', 'NumHDonors', 'NumHAcceptors',                     # Removing MolLogP ,which is RDKit's prediction of LogP, to check the model.
         'TPSA', 'NumRotatableBonds', 'NumAromaticRings',
         'NumAliphaticRings', 'FractionCSP3', 'HeavyAtomCount',
-        'NumHeteroatoms', 'RingCount', 'MolMR'
+        'NumHeteroatoms', 'RingCount', 'MolMR', 'NumSaturatedRings' # adding 'NumSaturatedRings'
     ]
     descriptor_data = []
     for smiles in smiles_list:
