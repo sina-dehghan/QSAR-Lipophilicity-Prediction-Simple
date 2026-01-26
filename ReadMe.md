@@ -1,4 +1,4 @@
-# QSAR Lipophilicity Prediction - (Ongoing)
+# QSAR Lipophilicity Prediction
 
 Quantitaitve Structure-Activity Relationship(QSAR) uses mathematical models predicts properties of molecules based on their chemical structure. In this program, we want to predict Lipophilicity(LogP).
 
